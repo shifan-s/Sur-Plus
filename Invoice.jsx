@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import html2pdf from "html2pdf.js";
 
+
 export default function Invoice() {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -76,7 +77,7 @@ export default function Invoice() {
         </div>
 
         <div className="p-10">
-          {/* 👤 Customer & Shipping */}
+          {/*  Customer & Shipping */}
           <div className="grid grid-cols-2 gap-10 pb-8 mb-12 border-b border-gray-100">
             <div>
               <h3 className="mb-3 text-xs font-bold tracking-widest text-gray-400 uppercase">Customer Info</h3>

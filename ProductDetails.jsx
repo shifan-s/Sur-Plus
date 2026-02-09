@@ -1,152 +1,231 @@
-import React, { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import productsData from "../data/products.json";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { resolveImage } from "../utils/image";
+
+const API = "http://localhost:5000/api";
 
 export default function ProductDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const product = productsData.find((p) => p.id === Number(id));
 
-  const [vIdx, setVIdx] = useState(0); 
-  const [imgIdx, setImgIdx] = useState(0); 
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const [selectedColorIndex, setSelectedColorIndex] = useState(0);
   const [selectedSize, setSelectedSize] = useState("");
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
-  if (!product) return <div className="flex items-center justify-center h-screen font-black">PRODUCT NOT FOUND</div>;
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API}/products/${id}`);
+        const data = await res.json().catch(() => ({}));
 
-  const activeV = product.variants[vIdx];
-  const activeImg = activeV.images[imgIdx];
+        if (!res.ok) {
+          setProduct(null);
+          return;
+        }
 
-  // --- ADD TO BAG LOGIC ---
-  const handleAddToBag = () => {
-    if (!selectedSize) {
-      alert("Please select a size before adding to bag!");
-      return;
-    }
+        setProduct(data);
+        setSelectedColorIndex(0);
+        setSelectedSize(data?.sizes?.[0] || "");
+        setSelectedImageIndex(0);
+      } catch {
+        setProduct(null);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    // 1. Get existing cart from localStorage
-    const existingCart = JSON.parse(localStorage.getItem("cart")) || [];
+    load();
+  }, [id]);
 
-    // 2. Create a unique ID for this specific variation
-    const cartId = `${product.id}-${activeV.color}-${selectedSize}`;
+  const currentVariant = useMemo(() => {
+    return product?.variants?.[selectedColorIndex] || product?.variants?.[0] || null;
+  }, [product, selectedColorIndex]);
 
-    // 3. Check if item already exists in cart
-    const existingItemIndex = existingCart.findIndex(item => item.cartId === cartId);
+  const images = currentVariant?.images || [];
 
-    if (existingItemIndex > -1) {
-      // Increase quantity if it exists
-      existingCart[existingItemIndex].qty += 1;
-    } else {
-      // Add new item if it doesn't
-      const newItem = {
-        cartId,
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        size: selectedSize,
-        color: activeV.color,
-        image: activeV.images[0], // Use the first image of the selected color
-        qty: 1
-      };
-      existingCart.push(newItem);
-    }
+  // ✅ main image based on selected thumbnail
+  const mainImage = resolveImage(images[selectedImageIndex] || images[0] || "");
 
-    // 4. Save back to localStorage
-    localStorage.setItem("cart", JSON.stringify(existingCart));
+  // ✅ reset main image when color changes
+  useEffect(() => {
+    setSelectedImageIndex(0);
+  }, [selectedColorIndex]);
 
-    // 5. Navigate to Cart page
-    navigate("/cart");
+  const addToCart = () => {
+    if (!product) return;
+
+    const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+
+    const size = selectedSize || product?.sizes?.[0] || "";
+    const color = currentVariant?.color || "";
+    const image = images[0] || ""; // store filename (or url)
+
+    // ✅ stable unique id for cart operations
+    const cartId = `${product._id}_${size}_${color}`;
+
+    const item = {
+      cartId,
+      _id: product._id,
+      name: product.name,
+      price: product.price,
+      description: product.description,
+      size,
+      color,
+      image,
+      qty: 1,
+    };
+
+    const idx = cart.findIndex((x) => x.cartId === cartId);
+    if (idx >= 0) cart[idx].qty = (cart[idx].qty || 1) + 1;
+    else cart.push(item);
+
+    localStorage.setItem("cart", JSON.stringify(cart));
+    alert("Added to cart!");
   };
 
-  return (
-    <div className="min-h-screen p-6 bg-white md:p-12 lg:p-20">
-      <div className="grid grid-cols-1 gap-16 mx-auto max-w-7xl lg:grid-cols-12">
-        
-        {/* LEFT: GALLERY */}
-        <div className="space-y-6 lg:col-span-7">
-          <div className="aspect-[3/4] rounded-[3rem] overflow-hidden bg-slate-50 border border-slate-100">
-            <img 
-              src={activeImg} 
-              key={activeImg} 
-              className="object-contain w-full h-full transition-all duration-500 md:object-cover" 
-              alt={product.name}
-            />
-          </div>
-          
-          <div className="flex gap-4 pb-4 overflow-x-auto">
-            {activeV.images.map((url, i) => (
-              <button 
-                key={i} 
-                onClick={() => setImgIdx(i)}
-                className={`w-24 h-24 rounded-2xl overflow-hidden border-2 transition-all flex-shrink-0 ${
-                  imgIdx === i ? "border-blue-600 scale-105 shadow-md" : "border-transparent opacity-40"
-                }`}
-              >
-                <img src={url} className="object-cover w-full h-full" alt="thumbnail" />
-              </button>
-            ))}
-          </div>
-        </div>
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] text-white flex items-center justify-center">
+        <div className="text-slate-400">Loading...</div>
+      </div>
+    );
+  }
 
-        {/* RIGHT: INFO */}
-        <div className="flex flex-col justify-center py-10 lg:col-span-5">
-          <h1 className="text-5xl font-black leading-tight tracking-tighter uppercase text-slate-900">
-            {product.name}
-          </h1>
-          <p className="mt-4 text-3xl font-light text-blue-600">₹{product.price}</p>
-          
-          <div className="w-full h-px my-8 bg-slate-100" />
-          
-          <p className="mb-10 font-medium leading-relaxed text-slate-500">
-            {product.description}
-          </p>
-
-          {/* COLOR SELECTOR */}
-          <div className="mb-10 space-y-4">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-              Color: <span className="text-black">{activeV.color}</span>
-            </h3>
-            <div className="flex gap-4">
-              {product.variants.map((v, i) => (
-                <button 
-                  key={i} 
-                  onClick={() => { setVIdx(i); setImgIdx(0); }} 
-                  className={`w-12 h-12 rounded-full p-1 border-2 transition-all ${
-                    vIdx === i ? "border-blue-600 scale-110 shadow-lg" : "border-transparent opacity-40"
-                  }`}
-                >
-                  <div className="w-full h-full rounded-full" style={{ backgroundColor: v.colorCode }} />
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* SIZE SELECTOR */}
-          <div className="mb-10 space-y-4">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Select Size</h3>
-            <div className="flex flex-wrap gap-2">
-              {product.sizes.map(s => (
-                <button 
-                  key={s} 
-                  disabled={product.stock[s] === 0}
-                  onClick={() => setSelectedSize(s)}
-                  className={`px-8 py-4 rounded-2xl font-black text-xs transition-all border-2 ${
-                    product.stock[s] === 0 ? "opacity-20 cursor-not-allowed line-through" :
-                    selectedSize === s ? "bg-black text-white border-black" : "bg-white border-slate-100 hover:border-slate-300"
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ACTION BUTTON */}
-          <button 
-            onClick={handleAddToBag}
-            className="w-full py-6 text-xs font-black tracking-widest text-white uppercase transition-all bg-black rounded-full shadow-2xl hover:bg-blue-600 active:scale-95"
+  if (!product) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] text-white flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="mb-2 text-3xl font-bold">PRODUCT NOT FOUND</h2>
+          <p className="mb-6 text-slate-400">This product id doesn’t exist in MongoDB.</p>
+          <button
+            onClick={() => navigate("/home")}
+            className="px-6 py-3 font-bold text-black bg-white rounded-xl hover:bg-indigo-400"
           >
-            Add to Bag
+            Back to Home
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0f172a] text-white">
+      <div className="p-10 mx-auto max-w-7xl">
+        <button
+          onClick={() => navigate("/home")}
+          className="px-4 py-2 mb-8 border rounded-xl border-white/20 hover:bg-white/5"
+        >
+          ← Back
+        </button>
+
+        <div className="grid grid-cols-1 gap-10 md:grid-cols-2">
+          {/* Image */}
+          <div className="overflow-hidden border bg-white/5 border-white/10 rounded-3xl">
+            <div className="h-[520px] bg-slate-900">
+              {mainImage ? (
+                <img
+                  src={mainImage}
+                  alt={product.name}
+                  className="object-cover w-full h-full"
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20" />
+              )}
+            </div>
+
+            {/* ✅ Thumbnails (click to change main image) */}
+            <div className="flex gap-3 p-4 overflow-auto">
+              {images.length === 0 ? (
+                <div className="text-sm text-slate-400">No images uploaded.</div>
+              ) : (
+                images.map((img, i) => {
+                  const src = resolveImage(img);
+                  const active = i === selectedImageIndex;
+
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setSelectedImageIndex(i)}
+                      className={`w-20 h-20 border rounded-xl overflow-hidden ${
+                        active ? "border-indigo-400" : "border-white/10"
+                      }`}
+                      title={`Image ${i + 1}`}
+                    >
+                      <img src={src} alt="thumb" className="object-cover w-full h-full" />
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Details */}
+          <div>
+            <h1 className="text-5xl font-black">{product.name}</h1>
+            <p className="mt-4 text-slate-300">{product.description}</p>
+
+            <p className="mt-6 text-4xl font-black text-indigo-400">₹{product.price}</p>
+
+            {/* Colors */}
+            <div className="mt-8">
+              <p className="mb-2 text-sm text-slate-300">Color</p>
+              <div className="flex gap-3">
+                {(product.variants || []).map((v, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setSelectedColorIndex(idx)}
+                    className={`w-10 h-10 rounded-full border ${
+                      idx === selectedColorIndex ? "border-indigo-400" : "border-white/20"
+                    }`}
+                    style={{ backgroundColor: v.colorCode }}
+                    title={v.color}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Sizes */}
+            <div className="mt-8">
+              <p className="mb-2 text-sm text-slate-300">Size</p>
+              <div className="flex flex-wrap gap-2">
+                {(product.sizes || []).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSelectedSize(s)}
+                    className={`px-3 py-2 rounded-xl border text-sm ${
+                      selectedSize === s ? "border-indigo-400" : "border-white/20"
+                    } hover:bg-white/5`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-4 mt-10">
+              <button
+                onClick={addToCart}
+                className="flex-1 py-4 font-bold text-black bg-white rounded-2xl hover:bg-indigo-400"
+              >
+                Add to Cart
+              </button>
+
+              <button
+                onClick={() => navigate("/cart")}
+                className="flex-1 py-4 font-bold border rounded-2xl border-white/20 hover:bg-white/5"
+              >
+                Go to Cart
+              </button>
+            </div>
+
+            <p className="mt-6 text-xs text-slate-500">Product ID: {product._id}</p>
+          </div>
         </div>
       </div>
     </div>
